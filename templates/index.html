@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AI ChatBot</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body class="light-mode">
+  <div class="container">
+    <h1>🤖 AI ChatBot</h1>
+    <p class="tagline">Talk, Learn, Calculate, and Generate Images!</p>
+
+    <div id="chat-box">
+      <div class="message bot">
+        Hi! I'm your AI assistant. Ask me anything or try:<br>
+        <code>calculate sqrt(25)</code><br>
+        <code>convert 10m to ft</code><br>
+        <code>generate image of a sunset</code>
+      </div>
+    </div>
+
+    <!-- Loading Spinner -->
+    <div id="spinner" class="spinner"></div>
+
+    <!-- Input Area -->
+    <div id="action-bar">
+      <form id="chat-form">
+        <input type="text" id="user-input" placeholder="Type your message..." autocomplete="off" />
+        <button type="submit">Send</button>
+      </form>
+      <button id="stop-button" type="button" style="display: none;">
+        Stop
+      </button>
+      <button id="dark-mode-toggle" type="button" title="Toggle Dark Mode">
+        🌙
+      </button>
+    </div>
+  </div>
+
+  <!-- Markdown Parser -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  <script>
+    // DOM Elements
+    const chatForm = document.getElementById('chat-form');
+    const userInput = document.getElementById('user-input');
+    const chatBox = document.getElementById('chat-box');
+    const spinner = document.getElementById('spinner');
+    const stopButton = document.getElementById('stop-button');
+    const darkModeToggle = document.getElementById('dark-mode-toggle');
+    const body = document.body;
+
+    let generating = false; // Track if image generation is active
+
+    // Check user preference
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const savedMode = localStorage.getItem('theme');
+
+    if (savedMode === 'dark' || (!savedMode && prefersDark)) {
+      body.classList.replace('light-mode', 'dark-mode');
+      darkModeToggle.textContent = '☀️';
+    }
+
+    /**
+     * Toggle dark/light mode
+     */
+    darkModeToggle.addEventListener('click', () => {
+      if (body.classList.contains('dark-mode')) {
+        body.classList.replace('dark-mode', 'light-mode');
+        darkModeToggle.textContent = '🌙';
+        localStorage.setItem('theme', 'light');
+      } else {
+        body.classList.replace('light-mode', 'dark-mode');
+        darkModeToggle.textContent = '☀️';
+        localStorage.setItem('theme', 'dark');
+      }
+    });
+
+    /**
+     * Show or hide the stop button and control input state
+     */
+    function setGenerating(state) {
+      generating = state;
+      stopButton.style.display = state ? 'inline-block' : 'none';
+      if (state) {
+        chatForm.classList.add('loading');
+        spinner.style.display = 'block';
+        userInput.disabled = true;
+      } else {
+        chatForm.classList.remove('loading');
+        spinner.style.display = 'none';
+        userInput.disabled = false;
+      }
+    }
+
+    /**
+     * Append a message to the chat box
+     */
+    function appendMessage(text, sender) {
+      const messageDiv = document.createElement('div');
+      messageDiv.classList.add('message', sender);
+      messageDiv.innerHTML = marked.parse(text.replace(/\n/g, '<br>'));
+      chatBox.appendChild(messageDiv);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    // Focus input on load
+    userInput.focus();
+
+    /**
+     * Handle form submission
+     */
+    chatForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const message = userInput.value.trim();
+      if (!message || generating) return;
+
+      appendMessage(message, 'user');
+      userInput.value = '';
+      setGenerating(false);
+
+      try {
+        const response = await fetch('/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message })
+        });
+
+        const data = await response.json();
+        appendMessage(data.response, 'bot');
+
+        // Show generated image
+        if (data.image_url) {
+          const img = document.createElement('img');
+          img.src = data.image_url;
+          img.alt = "Generated image";
+          img.style.marginTop = "10px";
+          img.style.maxWidth = "100%";
+          img.style.borderRadius = "8px";
+          img.style.boxShadow = "0 2px 8px rgba(0,0,0,0.1)";
+          const lastMsg = chatBox.lastElementChild;
+          lastMsg.appendChild(img);
+        }
+
+        // Show stop button if generating
+        if (data.show_stop) {
+          setGenerating(true);
+        }
+
+      } catch (error) {
+        console.error("Error:", error);
+        appendMessage("❌ Sorry, an error occurred. Please try again.", "bot");
+        setGenerating(false);
+      }
+    });
+
+    /**
+     * Handle "Stop" button click
+     */
+    stopButton.addEventListener('click', async () => {
+      setGenerating(false);
+      userInput.disabled = true;
+
+      try {
+        const response = await fetch('/cancel', { method: 'POST' });
+        const data = await response.json();
+        appendMessage(data.message, 'bot');
+      } catch (err) {
+        appendMessage("❌ Failed to cancel. Please wait.", "bot");
+        console.error("Cancel error:", err);
+      } finally {
+        userInput.disabled = false;
+        userInput.focus();
+      }
+    });
+  </script>
+</body>
+</html>
